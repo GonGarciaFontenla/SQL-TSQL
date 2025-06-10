@@ -95,38 +95,70 @@ empleado empl_comision con la sumatoria del total de lo vendido por ese
 empleado a lo largo del último año. Se deberá retornar el código del vendedor
 que más vendió (en monto) a lo largo del último año.
 */
-
-select * from empleado
-select * from factura
-go
-
-CREATE PROCEDURE ej4 (@empMasVendedor NUMERIC(6,0))
+CREATE PROCEDURE ej4 (@empMasVendedor numeric(6,0) OUTPUT)
 AS
 BEGIN 
-DECLARE @empleado NUMERIC(6,0)
-DECLARE cEmp CURSOR FOR
-    SELECT empl_codigo
-    FROM empleado
 
-SELECT TOP 1 @empMasVendedor = fact_vendedor FROM Factura 
-where year(fact_fecha) = 2012
-GROUP BY fact_vendedor
-ORDER BY sum(fact_total) desc 
+UPDATE Empleado 
+SET empl_comision = (SELECT sum(fact_total) FROM factura where fact_vendedor = Empleado.empl_codigo and year(fact_fecha) = 2012)
 
-OPEN cEmp
-FETCH NEXT FROM cEmp into @empleado
-WHILE @@FETCH_STATUS = 0
-BEGIN
-    UPDATE Empleado 
-    SET empl_comision = SELECT sum(fact_total) FROM factura where fact_vendedor = @empleado
-    FETCH NEXT FROM cEmp into @empleado
-END 
+SELECT TOP 1 @empMasVendedor = empl_codigo FROM empleado
+order by empl_comision
 
-CLOSE cEmp
-DEALLOCATE cEmp
 END
 GO
 
+/*
+5. Realizar un procedimiento que complete con los datos existentes en el modelo
+provisto la tabla de hechos denominada Fact_table tiene las siguiente definición:
+Create table Fact_table
+( anio char(4),
+mes char(2),
+familia char(3),
+rubro char(4),
+zona char(3),
+cliente char(6),
+producto char(8),
+cantidad decimal(12,2),
+monto decimal(12,2)
+)
+Alter table Fact_table
+Add constraint primary key(anio,mes,familia,rubro,zona,cliente,producto)
+*/
+CREATE PROCEDURE ej5 AS
+BEGIN
+CREATE TABLE Fact_table (
+    anio char(4), 
+    mes char(2),  
+    familia char(3), 
+    rubro char(4), 
+    zona char(3), 
+    cliente char(6),
+    producto char(8), 
+    cantidad decimal(12,2),
+    monto decimal(12,2)
+    CONSTRAINT pk_fact_table PRIMARY KEY(anio,mes,familia,rubro,zona,cliente,producto)
+)
+
+INSERT INTO Fact_table 
+SELECT year(fact_fecha), 
+    MONTH(fact_fecha),
+    prod_familia,
+    prod_rubro,
+    depa_zona
+    fact_cliente,   
+    prod_codigo, 
+    SUM(item_cantidad), 
+    SUM(item_cantidad * item_precio) 
+FROM factura 
+join Item_Factura on fact_tipo + fact_sucursal + fact_tipo = item_tipo + item_sucursal + item_numero 
+join Producto on item_producto = prod_codigo
+join Empleado on fact_vendedor = empl_codigo
+join Departamento on empl_departamento = depa_codigo
+GROUP BY year(fact_fecha), MONTH(fact_fecha), prod_familia, prod_rubro, depa_zona, fact_cliente, prod_codigo
+
+END
+go
 
 
 /*

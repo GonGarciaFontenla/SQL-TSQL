@@ -198,3 +198,65 @@ join Item_Factura on item_tipo+item_sucursal+item_numero = fact_tipo+fact_sucurs
 where year(fact_fecha) = year(getdate()) - 1
 group by clie_codigo
 order by count(fact_cliente) desc
+
+/*
+16.Con el fin de lanzar una nueva campaña comercial para los clientes que menos compran
+en la empresa, se pide una consulta SQL que retorne aquellos clientes cuyas ventas son
+inferiores a 1/3 del promedio de ventas del producto que más se vendió en el 2012.
+Además mostrar
+1. Nombre del Cliente
+2. Cantidad de unidades totales vendidas en el 2012 para ese cliente.
+3. Código de producto que mayor venta tuvo en el 2012 (en caso de existir más de 1,
+mostrar solamente el de menor código) para ese cliente.
+*/
+SELECT 
+    c.clie_razon_social, 
+    sum(item_cantidad), 
+    (   
+        SELECT TOP 1 item_producto FROM Factura 
+        JOIN Item_Factura on item_tipo+item_sucursal+item_numero = fact_tipo+fact_sucursal+fact_numero 
+        WHERE fact_cliente = clie_codigo and YEAR(fact_fecha) = 2012
+        GROUP BY item_producto
+        ORDER BY sum(item_cantidad) desc, item_producto asc
+    ) 
+FROM cliente c
+JOIN Factura on clie_codigo = fact_cliente
+JOIN Item_Factura on item_tipo+item_sucursal+item_numero = fact_tipo+fact_sucursal+fact_numero
+WHERE YEAR(fact_fecha) = 2012
+GROUP BY clie_codigo, clie_razon_social
+HAVING sum(fact_total) / 3 > (SELECT TOP 1 SUM(i2.item_cantidad * i2.item_precio)
+FROM Item_Factura i2 
+JOIN Factura f2 ON
+f2.fact_tipo = i2.item_tipo AND f2.fact_sucursal = i2.item_sucursal AND f2.fact_numero = i2.item_numero
+WHERE YEAR(f2.fact_fecha) = 2012
+GROUP BY i2.item_producto 
+ORDER BY SUM(i2.item_cantidad * i2.item_precio) DESC) 
+
+
+SELECT c.clie_razon_social,
+(SELECT SUM(i2.item_cantidad)
+FROM factura f2 
+JOIN Item_Factura i2 ON
+f2.fact_tipo = i2.item_tipo AND f2.fact_sucursal = i2.item_sucursal AND f2.fact_numero = i2.item_numero
+WHERE YEAR(f2.fact_fecha) = 2012
+AND f2.fact_cliente = c.clie_codigo) unidades,
+(SELECT TOP 1 i2.item_producto
+FROM factura f2 
+JOIN Item_Factura i2 ON
+f2.fact_tipo = i2.item_tipo AND f2.fact_sucursal = i2.item_sucursal AND f2.fact_numero = i2.item_numero
+WHERE YEAR(f2.fact_fecha) = 2012
+AND f2.fact_cliente = c.clie_codigo
+GROUP BY i2.item_producto 
+ORDER BY SUM(i2.item_cantidad) DESC, item_producto ASC
+) producto
+FROM Cliente c
+INNER JOIN Factura f ON c.clie_codigo = f.fact_cliente 
+WHERE YEAR(f.fact_fecha) = 2012 
+GROUP BY c.clie_codigo, c.clie_razon_social 
+HAVING SUM(f.fact_total) / 3 > (SELECT TOP 1 SUM(i2.item_cantidad * i2.item_precio)
+FROM Item_Factura i2 
+JOIN Factura f2 ON
+f2.fact_tipo = i2.item_tipo AND f2.fact_sucursal = i2.item_sucursal AND f2.fact_numero = i2.item_numero
+WHERE YEAR(f2.fact_fecha) = 2012
+GROUP BY i2.item_producto 
+ORDER BY SUM(i2.item_cantidad * i2.item_precio) DESC) 
