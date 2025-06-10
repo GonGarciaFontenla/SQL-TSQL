@@ -1,0 +1,174 @@
+/*
+Hacer una función que dado un artículo y un deposito devuelva un string que
+indique el estado del depósito según el artículo. Si la cantidad almacenada es
+menor al límite retornar “OCUPACION DEL DEPOSITO XX %” siendo XX el
+% de ocupación. Si la cantidad almacenada es mayor o igual al límite retornar
+“DEPOSITO COMPLETO”.
+*/
+
+create function ej1(@deposito char(2), @producto char(8))
+returns varchar(50) as
+begin 
+declare @cantidad decimal(12,2), @maximo decimal(12,2)
+select @cantidad = stoc_cantidad, @maximo = stoc_stock_maximo  from STOCK
+where stoc_deposito = @deposito and stoc_producto = @producto
+if @cantidad >= @maximo
+    return 'DEPOSITO COMPLETO'
+return 'Ocupacion del deposito ' + str(@cantidad/@maximo * 100) + '%'
+end 
+go
+
+/*
+2. Realizar una función que dado un artículo y una fecha, retorne el stock que
+existía a esa fecha
+*/
+CREATE FUNCTION ej2(@articulo CHAR(8), @fecha DATE)
+RETURNS DECIMAL(12,2)
+AS 
+BEGIN
+    DECLARE @cantStock DECIMAL(12,2)
+    DECLARE @cantidad DECIMAL(12,2)
+    DECLARE @minimo decimal(12,2)
+    DECLARE @maximo decimal(12,2)
+
+    DECLARE cStock CURSOR FOR
+        SELECT item_cantidad 
+        FROM factura 
+        join item_factura
+        on fact_tipo + fact_sucursal + fact_tipo = item_tipo + item_sucursal + item_numero 
+        where item_producto = @articulo and fact_fecha = @fecha
+
+SELECT @cantStock = stoc_cantidad, @minimo = stoc_punto_reposicion, @maximo = stoc_stock_maximo
+    FROM stock 
+    where stoc_producto = @articulo
+    AND stoc_deposito = '00'
+
+OPEN cStock
+FETCH NEXT FROM cStock into @cantidad
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @cantStock = @cantStock - @cantidad
+    if @cantStock < @minimo
+        SET @cantStock = @maximo - @minimo
+    FETCH NEXT FROM cStock into @cantidad
+END 
+
+CLOSE cStock
+DEALLOCATE cStock
+
+return @cantStock
+END
+
+go
+
+/*
+3. Cree el/los objetos de base de datos necesarios para corregir la tabla empleado
+en caso que sea necesario. Se sabe que debería existir un único gerente general
+(debería ser el único empleado sin jefe). Si detecta que hay más de un empleado
+sin jefe deberá elegir entre ellos el gerente general, el cual será seleccionado por
+mayor salario. Si hay más de uno se seleccionara el de mayor antigüedad en la
+empresa. Al finalizar la ejecución del objeto la tabla deberá cumplir con la regla
+de un único empleado sin jefe (el gerente general) y deberá retornar la cantidad
+de empleados que había sin jefe antes de la ejecución.
+*/
+CREATE PROCEDURE ej3 (@empleadoSinJefe INT OUTPUT) AS 
+BEGIN   
+DECLARE @gerenteGeneral NUMERIC(6,0)
+SELECT @empleadoSinJefe = count(*) 
+FROM empleado
+WHERE empl_jefe IS NULL
+IF @empleadoSinJefe > 1
+    SELECT top 1 @gerenteGeneral = empl_codigo from empleado
+    WHERE empl_jefe IS NULL
+    ORDER BY empl_salario
+
+    UPDATE Empleado SET empl_jefe = @gerenteGeneral
+    WHERE empl_jefe is null
+    AND empl_codigo <> @gerenteGeneral
+END
+
+GO
+
+/*
+4. Cree el/los objetos de base de datos necesarios para actualizar la columna de
+empleado empl_comision con la sumatoria del total de lo vendido por ese
+empleado a lo largo del último año. Se deberá retornar el código del vendedor
+que más vendió (en monto) a lo largo del último año.
+*/
+
+select * from empleado
+select * from factura
+go
+
+CREATE PROCEDURE ej4 (@empMasVendedor NUMERIC(6,0))
+AS
+BEGIN 
+DECLARE @empleado NUMERIC(6,0)
+DECLARE cEmp CURSOR FOR
+    SELECT empl_codigo
+    FROM empleado
+
+SELECT TOP 1 @empMasVendedor = fact_vendedor FROM Factura 
+where year(fact_fecha) = 2012
+GROUP BY fact_vendedor
+ORDER BY sum(fact_total) desc 
+
+OPEN cEmp
+FETCH NEXT FROM cEmp into @empleado
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    UPDATE Empleado 
+    SET empl_comision = SELECT sum(fact_total) FROM factura where fact_vendedor = @empleado
+    FETCH NEXT FROM cEmp into @empleado
+END 
+
+CLOSE cEmp
+DEALLOCATE cEmp
+END
+GO
+
+
+
+/*
+11. Cree el/los objetos de base de datos necesarios para que dado un código de
+empleado se retorne la cantidad de empleados que este tiene a su cargo (directa o
+indirectamente). Solo contar aquellos empleados (directos o indirectos) que
+tengan un código mayor que su jefe directo.
+*/
+
+CREATE FUNCTION ej11 (@codigo NUMERIC(6,0))
+RETURNS INT
+AS
+BEGIN 
+    DECLARE @cantidad INT = 0;
+    DECLARE @empSig NUMERIC(6,0);
+
+    DECLARE cursorEmp CURSOR FOR
+        SELECT empl_codigo
+        FROM empleado
+        WHERE empl_jefe = @codigo 
+          AND empl_codigo > @codigo;
+
+    SELECT @cantidad = COUNT(*)
+    FROM empleado 
+    WHERE empl_jefe = @codigo 
+      AND empl_codigo > @codigo;
+
+    IF @cantidad = 0
+        RETURN 0;
+
+    OPEN cursorEmp;
+    FETCH NEXT FROM cursorEmp INTO @empSig;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN 
+        SET @cantidad = @cantidad + dbo.ej11(@empSig);
+        FETCH NEXT FROM cursorEmp INTO @empSig;
+    END
+
+    CLOSE cursorEmp;
+    DEALLOCATE cursorEmp; 
+
+    RETURN @cantidad;
+END
+GO
