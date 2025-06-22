@@ -356,12 +356,12 @@ order by count(distinct(prod_codigo)) desc
 /*
 19. En virtud de una recategorizacion de productos referida a la familia de los mismos se
 solicita que desarrolle una consulta sql que retorne para todos los productos:
- Codigo de producto
- Detalle del producto
- Codigo de la familia del producto
- Detalle de la familia actual del producto
+ Codigo de producto  
+ Detalle del producto   
+ Codigo de la familia del producto  
+ Detalle de la familia actual del producto 
  Codigo de la familia sugerido para el producto
- Detalla de la familia sugerido para el producto
+ Detalle de la familia sugerido para el producto 
 La familia sugerida para un producto es la que poseen la mayoria de los productos cuyo
 detalle coinciden en los primeros 5 caracteres.
 En caso que 2 o mas familias pudieran ser sugeridas se debera seleccionar la de menor
@@ -369,3 +369,115 @@ codigo. Solo se deben mostrar los productos para los cuales la familia actual se
 diferente a la sugerida
 Los resultados deben ser ordenados por detalle de producto de manera ascendente
 */
+select 
+    p1.prod_codigo, 
+    p1.prod_detalle, 
+    p1.prod_familia, 
+    f1.fami_detalle,   
+        (
+        select top 1 f2.fami_id from Producto p2
+        join Familia f2 on p2.prod_familia = f2.fami_id
+        where LEFT(p1.prod_Detalle, 5) = LEFT(p2.prod_Detalle, 5)
+        GROUP BY f2.fami_detalle, f2.fami_id
+        order by count(*) DESC, f2.fami_id
+    ) AS codigo_sugerida, 
+    (
+        select top 1 f2.fami_detalle from Producto p2
+        join Familia f2 on p2.prod_familia = f2.fami_id
+        where LEFT(p1.prod_Detalle, 5) = LEFT(p2.prod_Detalle, 5)
+        GROUP BY f2.fami_detalle, f2.fami_id
+        order by count(*) DESC, f2.fami_id
+    ) AS detalle_sugerida
+from producto p1
+join Familia f1 on prod_familia = f1.fami_id
+
+
+/*
+20. Escriba una consulta sql que retorne un ranking de los mejores 3 empleados del 2012
+Se debera retornar legajo, nombre y apellido, anio de ingreso, puntaje 2011, puntaje
+2012. 
+El puntaje de cada empleado se calculara de la siguiente manera: para los que
+hayan vendido al menos 50 facturas el puntaje se calculara como la cantidad de facturas
+que superen los 100 pesos que haya vendido en el año, para los que tengan menos de 50
+facturas en el año el calculo del puntaje sera el 50% de cantidad de facturas realizadas
+por sus subordinados directos en dicho año.
+*/
+select 
+    top 3 empl_codigo, 
+    empl_nombre, 
+    empl_apellido, 
+    empl_ingreso,
+    case when 
+        (
+        select count(fact_vendedor) 
+        from Factura 
+        where fact_vendedor = e1.empl_codigo and year(fact_fecha) > 2011) >= 50
+    then(
+        select count(*) 
+        from Factura 
+        where fact_total > 100 and fact_vendedor = e1.empl_codigo and year(fact_fecha) = 2011)
+    else(
+        select count(*)  from Empleado e2
+        join Factura on e2.empl_codigo = fact_vendedor
+        where e2.empl_jefe = e1.empl_codigo and year(fact_fecha) = 2011
+    )  * 0.5
+    end as puntaje_2011,
+
+    case when 
+        (
+        select count(fact_vendedor) 
+        from Factura 
+        where fact_vendedor = e1.empl_codigo and year(fact_fecha) > 2012) >= 50
+    then(
+        select count(*) 
+        from Factura 
+        where fact_total > 100 and fact_vendedor = e1.empl_codigo and year(fact_fecha) = 2012)
+    else(
+        select count(*)  from Empleado e2
+        join Factura on e2.empl_codigo = fact_vendedor
+        where e2.empl_jefe = e1.empl_codigo and year(fact_fecha) = 2012
+    )  * 0.5
+    end as puntaje_2012
+from Empleado e1 
+order by puntaje_2012 desc
+
+/*
+21. Escriba una consulta sql que retorne para todos los años, en los cuales se haya hecho al
+menos una factura, la cantidad de clientes a los que se les facturo de manera incorrecta 
+al menos una factura y que cantidad de facturas se realizaron de manera incorrecta. Se
+considera que una factura es incorrecta cuando la diferencia entre el total de la factura
+menos el total de impuesto tiene una diferencia mayor a $ 1 respecto a la sumatoria de
+los costos de cada uno de los items de dicha factura. Las columnas que se deben mostrar
+son:
+ Año
+ Clientes a los que se les facturo mal en ese año
+ Facturas mal realizadas en ese año
+*/
+select year(fact_fecha),count(distinct fact_cliente) as clientes_mal_fact, count(*) as Cant_fact_malas from Factura f1
+where abs(fact_total - fact_total_impuestos - (select sum(item_cantidad * item_precio) 
+from item_factura where fact_tipo = item_tipo and fact_sucursal = item_sucursal and fact_numero = item_numero)) > 1
+GROUP by year(fact_fecha)
+order by year(fact_fecha)
+
+/*
+22. Escriba una consulta sql que retorne una estadistica de venta para todos los rubros por
+trimestre contabilizando todos los años. Se mostraran como maximo 4 filas por rubro (1
+por cada trimestre).
+Se deben mostrar 4 columnas:
+ Detalle del rubro
+ Numero de trimestre del año (1 a 4)
+ Cantidad de facturas emitidas en el trimestre en las que se haya vendido al
+menos un producto del rubro
+ Cantidad de productos diferentes del rubro vendidos en el trimestre
+El resultado debe ser ordenado alfabeticamente por el detalle del rubro y dentro de cada
+rubro primero el trimestre en el que mas facturas se emitieron.
+No se deberan mostrar aquellos rubros y trimestres para los cuales las facturas emitiadas
+no superen las 100.
+En ningun momento se tendran en cuenta los productos compuestos para esta
+estadistica.
+*/
+select rubr_detalle,MONTH(fact_fecha) ,((MONTH(fact_fecha) - 1) / 3) + 1 as trimestre from Rubro
+join producto on rubr_id = prod_rubro
+join Item_Factura on item_producto = prod_codigo
+join Factura on fact_tipo = item_tipo and fact_sucursal = item_sucursal and fact_numero = item_numero
+order by rubr_detalle
