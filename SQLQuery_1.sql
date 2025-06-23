@@ -25,14 +25,16 @@ EJERCICIOS HECHOS:
 23.✅
 24.✅
 25.✅
-26.
-27.
-28.
+26.✅
+27.✅
+28.✅
 29.
 30.
 31.
 32.
 33.
+34.
+35.
 */
 
 
@@ -700,11 +702,117 @@ group by year(f1.fact_fecha)
 /*
 26. Escriba una consulta sql que retorne un ranking de empleados devolviendo las
 siguientes columnas:
- Empleado
- Depósitos que tiene a cargo
- Monto total facturado en el año corriente
- Codigo de Cliente al que mas le vendió
- Producto más vendido
- Porcentaje de la venta de ese empleado sobre el total vendido ese año.
+ Empleado  ✅
+ Depósitos que tiene a  cargo   ✅
+ Monto total facturado en el año corriente    ✅   
+ Codigo de Cliente al que mas le vendió    ✅
+ Producto más vendido    ✅
+ Porcentaje de la venta de ese empleado sobre el total vendido ese año.    
 Los datos deberan ser ordenados por venta del empleado de mayor a menor.
 */
+select 
+    empl_nombre, 
+    (select count(*) from Deposito where depo_encargado = empl_codigo), 
+    sum(fact_total) as asdas, 
+    (
+        select top 1 fact_cliente 
+        from Factura 
+        where fact_vendedor = empl_codigo and year(fact_fecha) = 2012
+        group by fact_cliente 
+        order by sum(fact_total) desc
+    ) as cliente_top,
+    (
+        select top 1 item_producto 
+        from Factura 
+        join Item_Factura on fact_tipo = item_tipo and fact_sucursal = item_sucursal and fact_numero = item_numero
+        where fact_vendedor = empl_codigo and year(fact_fecha) = 2012
+        group by item_producto
+        order by sum(item_Cantidad) desc  
+    ) as Producto_Mas_Vendido, 
+    sum(fact_total) * 100 / (select sum(fact_total) from Factura where year(fact_fecha) = 2012)
+from Factura
+join Empleado on fact_vendedor = empl_codigo
+where year(fact_fecha) = 2012
+group by empl_codigo, empl_nombre
+order by asdas desc 
+
+
+/*
+27. Escriba una consulta sql que retorne una estadística basada en la facturacion por año y
+envase devolviendo las siguientes columnas:
+ Año    
+ Codigo de envase   
+ Detalle del envase  
+ Cantidad de productos que tienen ese envase      
+ Cantidad de productos facturados de ese envase    
+ Producto mas vendido de ese envase  
+ Monto total de venta de ese envase en ese año   
+ Porcentaje de la venta de ese envase respecto al total vendido de ese año  
+Los datos deberan ser ordenados por año y dentro del año por el envase con más
+facturación de mayor a menor
+*/
+select 
+    year(f1.fact_fecha), 
+    enva_codigo, 
+    enva_detalle,
+    (select count(distinct prod_codigo) from Producto where prod_envase = enva_codigo), 
+    count(distinct item_producto), 
+    (
+        select top 1 prod_codigo 
+        from Producto 
+        join Item_Factura on prod_codigo = item_producto 
+        where prod_envase = enva_codigo
+        group by prod_codigo
+        order by sum(item_cantidad) desc
+    ) as producto_mas_vendido, 
+    sum(item_cantidad * item_precio) as factura_envase,
+    sum(item_cantidad * item_precio) * 100 / 
+        (
+            select sum(fact_total - fact_total_impuestos) 
+            from Factura 
+            where year(fact_fecha) = year(f1.fact_fecha)
+        ) as Porcentaje_venta
+from Factura f1
+join Item_Factura on f1.fact_tipo = item_tipo and f1.fact_sucursal = item_sucursal and f1.fact_numero = item_numero
+join Producto on prod_codigo = item_producto
+join Envases on enva_codigo = prod_envase
+group by year(f1.fact_fecha),enva_codigo, enva_detalle
+order by year(f1.fact_fecha) desc, factura_envase desc
+
+
+/*
+28. Escriba una consulta sql que retorne una estadística por Año y Vendedor que retorne las
+siguientes columnas:
+ Año.    
+ Codigo de Vendedor    
+ Detalle del Vendedor 
+ Cantidad de facturas que realizó en ese año  
+ Cantidad de clientes a los cuales les vendió en ese año.     
+ Cantidad de productos facturados con composición en ese año  
+ Cantidad de productos facturados sin composicion en ese año. 
+ Monto total vendido por ese vendedor en ese año
+Los datos deberan ser ordenados por año y dentro del año por el vendedor que haya
+vendido mas productos diferentes de mayor a menor.
+*/
+select 
+    year(f1.fact_fecha), 
+    f1.fact_vendedor,
+    empl_nombre,
+    count(distinct fact_tipo+fact_sucursal+fact_numero), 
+    count(distinct fact_cliente), 
+    (
+        select count(distinct item_producto) from Item_Factura
+        join factura f2 on fact_tipo = item_tipo and fact_sucursal = item_sucursal and fact_numero = item_numero
+        where year(f1.fact_fecha) = year(f2.fact_fecha) and item_producto in (select comp_producto from Composicion)
+    ) as Productos_Composicion,
+    (
+        select count(distinct item_producto) from Item_Factura
+        join factura f3 on fact_tipo = item_tipo and fact_sucursal = item_sucursal and fact_numero = item_numero
+        where year(f1.fact_fecha) = year(f3.fact_fecha) and item_producto not in (select comp_producto from Composicion)
+    ), 
+    sum(item_Cantidad * item_precio)
+from Factura f1
+join Item_Factura on fact_tipo = item_tipo and fact_sucursal = item_sucursal and fact_numero = item_numero
+join Empleado on f1.fact_vendedor = empl_codigo
+group by year(f1.fact_fecha), f1.fact_vendedor, empl_nombre
+order by year(f1.fact_fecha) DESC, sum(item_cantidad * item_precio) desc 
