@@ -1,4 +1,15 @@
 /*
+1.✅
+2.✅
+3.✅
+4.✅
+5.✅
+6.❌
+7.✅
+11.✅
+*/
+
+/*
 Hacer una función que dado un artículo y un deposito devuelva un string que
 indique el estado del depósito según el artículo. Si la cantidad almacenada es
 menor al límite retornar “OCUPACION DEL DEPOSITO XX %” siendo XX el
@@ -6,60 +17,65 @@ menor al límite retornar “OCUPACION DEL DEPOSITO XX %” siendo XX el
 “DEPOSITO COMPLETO”.
 */
 
-create function ej1(@deposito char(2), @producto char(8))
-returns varchar(50) as
+GO
+create or alter function ej1(@articulo char(8), @deposito char(2))
+returns varchar(300) as 
 begin 
-declare @cantidad decimal(12,2), @maximo decimal(12,2)
-select @cantidad = stoc_cantidad, @maximo = stoc_stock_maximo  from STOCK
-where stoc_deposito = @deposito and stoc_producto = @producto
-if @cantidad >= @maximo
-    return 'DEPOSITO COMPLETO'
-return 'Ocupacion del deposito ' + str(@cantidad/@maximo * 100) + '%'
+    declare @ocupacion decimal(12,2), @maximo decimal(12,2)
+
+    select @ocupacion = stoc_Cantidad, @maximo = stoc_stock_maximo from Stock
+    where stoc_producto = @articulo and stoc_Deposito = @deposito
+
+    if @ocupacion >= @maximo 
+        return 'DEPOSITO COMPLETO'
+    return 'OCUPACION DEL DEPOSITO ' + RTRIM(STR(ROUND(@ocupacion * 100.0 / @maximo, 2), 6, 2)) + '%'
 end 
-go
+GO 
+
 
 /*
 2. Realizar una función que dado un artículo y una fecha, retorne el stock que
 existía a esa fecha
 */
-CREATE FUNCTION ej2(@articulo CHAR(8), @fecha DATE)
-RETURNS DECIMAL(12,2)
-AS 
-BEGIN
-    DECLARE @cantStock DECIMAL(12,2)
-    DECLARE @cantidad DECIMAL(12,2)
-    DECLARE @minimo decimal(12,2)
-    DECLARE @maximo decimal(12,2)
-
-    DECLARE cStock CURSOR FOR
-        SELECT item_cantidad 
-        FROM factura 
-        join item_factura
-        on fact_tipo + fact_sucursal + fact_tipo = item_tipo + item_sucursal + item_numero 
-        where item_producto = @articulo and fact_fecha = @fecha
-
-SELECT @cantStock = stoc_cantidad, @minimo = stoc_punto_reposicion, @maximo = stoc_stock_maximo
-    FROM stock 
-    where stoc_producto = @articulo
-    AND stoc_deposito = '00'
-
-OPEN cStock
-FETCH NEXT FROM cStock into @cantidad
-WHILE @@FETCH_STATUS = 0
-BEGIN
-    SET @cantStock = @cantStock - @cantidad
-    if @cantStock < @minimo
-        SET @cantStock = @maximo - @minimo
-    FETCH NEXT FROM cStock into @cantidad
-END 
-
-CLOSE cStock
-DEALLOCATE cStock
-
-return @cantStock
-END
-
 go
+create or alter function ej2(@articulo char(8), @fecha date)
+returns decimal(12,2)
+as
+begin 
+    declare 
+        @cant_Stock decimal(12,2), 
+        @cantidad decimal(12,2), 
+        @maximo decimal(12,2), 
+        @minimo decimal(12,2)
+    declare cStock cursor for 
+        select item_Cantidad
+        from Item_Factura
+        join Factura on fact_tipo + fact_sucursal + fact_tipo = item_tipo + item_sucursal + item_numero 
+        where fact_fecha = @fecha and item_producto = @articulo
+
+    select 
+        @cant_Stock = stoc_Cantidad, 
+        @maximo = stoc_stock_maximo, 
+        @minimo = stoc_punto_reposicion
+    from stock 
+    where stoc_producto = @articulo and stoc_deposito = '00'
+
+    open cStock 
+    fetch next from cStock into @Cantidad
+    while @@FETCH_STATUS = 0
+    begin 
+        set  @cant_Stock = @cant_Stock - @cantidad
+        if  @cant_Stock < @minimo
+            set @cant_Stock = @maximo - @minimo
+        FETCH NEXT FROM cStock into @cantidad
+    end 
+
+    close cStock
+    deallocate cStock
+
+    return @cant_Stock
+end
+go 
 
 /*
 3. Cree el/los objetos de base de datos necesarios para corregir la tabla empleado
@@ -71,23 +87,26 @@ empresa. Al finalizar la ejecución del objeto la tabla deberá cumplir con la r
 de un único empleado sin jefe (el gerente general) y deberá retornar la cantidad
 de empleados que había sin jefe antes de la ejecución.
 */
-CREATE PROCEDURE ej3 (@empleadoSinJefe INT OUTPUT) AS 
-BEGIN   
-DECLARE @gerenteGeneral NUMERIC(6,0)
-SELECT @empleadoSinJefe = count(*) 
-FROM empleado
-WHERE empl_jefe IS NULL
-IF @empleadoSinJefe > 1
-    SELECT top 1 @gerenteGeneral = empl_codigo from empleado
-    WHERE empl_jefe IS NULL
-    ORDER BY empl_salario
+create or alter procedure ej3 (@cantSinJefe INT OUTPUT) 
+AS
+begin 
+    declare @gerenteGeneral numeric(6, 0)
 
-    UPDATE Empleado SET empl_jefe = @gerenteGeneral
-    WHERE empl_jefe is null
-    AND empl_codigo <> @gerenteGeneral
-END
+    select @cantSinJefe = count(*) 
+    from empleado 
+    where empl_jefe is null
 
-GO
+    if @cantSinJefe > 1 
+        select @gerenteGeneral = empl_codigo 
+        from Empleado 
+        where empl_jefe is null 
+        order by empl_salario
+    
+    update Empleado set empl_jefe = @gerenteGeneral
+    where empl_jefe is null 
+    and empl_codigo <> @gerenteGeneral
+end  
+go
 
 /*
 4. Cree el/los objetos de base de datos necesarios para actualizar la columna de
@@ -95,18 +114,21 @@ empleado empl_comision con la sumatoria del total de lo vendido por ese
 empleado a lo largo del último año. Se deberá retornar el código del vendedor
 que más vendió (en monto) a lo largo del último año.
 */
-CREATE PROCEDURE ej4 (@empMasVendedor numeric(6,0) OUTPUT)
-AS
-BEGIN 
+create or alter procedure ej4(@top_vendedor numeric(6,0) output)
+as 
+begin 
+    update Empleado
+    set empl_comision = 
+        isnull((
+        select sum(fact_total) 
+        from Factura 
+        where fact_vendedor = Empleado.empl_codigo and year(fact_fecha) = 2012
+        ),0)
 
-UPDATE Empleado 
-SET empl_comision = (SELECT sum(fact_total) FROM factura where fact_vendedor = Empleado.empl_codigo and year(fact_fecha) = 2012)
+    set @top_vendedor = (select top 1 empl_codigo from Empleado order by empl_comision)
+end 
+go
 
-SELECT TOP 1 @empMasVendedor = empl_codigo FROM empleado
-order by empl_comision
-
-END
-GO
 
 /*
 5. Realizar un procedimiento que complete con los datos existentes en el modelo
@@ -125,40 +147,104 @@ monto decimal(12,2)
 Alter table Fact_table
 Add constraint primary key(anio,mes,familia,rubro,zona,cliente,producto)
 */
-CREATE PROCEDURE ej5 AS
-BEGIN
-CREATE TABLE Fact_table (
-    anio char(4), 
-    mes char(2),  
-    familia char(3), 
-    rubro char(4), 
-    zona char(3), 
-    cliente char(6),
-    producto char(8), 
-    cantidad decimal(12,2),
-    monto decimal(12,2)
-    CONSTRAINT pk_fact_table PRIMARY KEY(anio,mes,familia,rubro,zona,cliente,producto)
+create or alter procedure ej5
+as 
+begin
+    create table fact_table (
+        anio char(4),
+        mes char(2),
+        familia char(3),
+        rubro char(4),
+        zona char(3),
+        cliente char(6),
+        producto char(8),
+        cantidad decimal(12,2),
+        monto decimal(12,2)
+        constraint pk_fact_table primary key(anio,mes,familia,rubro,zona,cliente,producto)
+    ) 
+
+    insert into fact_table
+    select 
+        year(fact_fecha), 
+        MONTH(fact_fecha), 
+        prod_familia,
+        prod_rubro,
+        depa_zona, 
+        fact_cliente, 
+        prod_codigo, 
+        sum(item_cantidad),
+        sum(item_cantidad*item_precio)
+    from Factura
+    join Item_Factura on fact_tipo+fact_sucursal+fact_numero = item_tipo+item_sucursal+item_numero
+    join Producto on prod_codigo = item_producto
+    join Empleado on fact_vendedor = empl_codigo
+    join Departamento on depa_codigo = empl_departamento
+    group by 
+        year(fact_fecha), 
+        MONTH(fact_fecha), 
+        prod_familia,
+        prod_rubro,
+        depa_zona, 
+        fact_cliente, 
+        prod_codigo
+end 
+go
+
+
+/*
+7. Hacer un procedimiento que dadas dos fechas complete la tabla Ventas. Debe
+insertar una línea por cada artículo con los movimientos de stock generados por
+las ventas entre esas fechas. La tabla se encuentra creada y vacía.
+*/
+--drop table VentasEj7
+
+CREATE TABLE VentasEj7 (
+	articulo char(8),
+	detalle char(50),
+	cant_movimientos int,
+	precio decimal(12,2),
+	ganancia decimal(12,2)
+)
+GO 
+
+create procedure ej7(@f1 date, @f2 date)  
+as 
+begin 
+    insert into VentasEj7 
+    select 
+        prod_codigo,
+        prod_detalle, 
+        count(item_producto), 
+        avg(item_precio), 
+        sum(item_cantidad*item_precio)
+    from Producto
+    join Item_Factura on prod_codigo = item_producto
+    join Factura on fact_tipo+fact_sucursal+fact_numero = item_tipo+item_sucursal+item_numero
+    where fact_fecha BETWEEN @f1 and @f2
+    group by prod_codigo, prod_detalle
+end 
+go
+
+
+/*
+8. Realizar un procedimiento que complete la tabla Diferencias de precios, para los
+productos facturados que tengan composición y en los cuales el precio de
+facturación sea diferente al precio del cálculo de los precios unitarios por
+cantidad de sus componentes, se aclara que un producto que compone a otro,
+también puede estar compuesto por otros y así sucesivamente, la tabla se debe
+crear y está formada por las siguientes columnas:
+*/
+--drop table diferenciasEj8
+
+create table diferenciasEj8 (
+    articulo char(8),
+	detalle char(50),
+	cantidad int,
+	precio_generado decimal(12,2),
+	precio_facturado decimal(12,2) 
 )
 
-INSERT INTO Fact_table 
-SELECT year(fact_fecha), 
-    MONTH(fact_fecha),
-    prod_familia,
-    prod_rubro,
-    depa_zona
-    fact_cliente,   
-    prod_codigo, 
-    SUM(item_cantidad), 
-    SUM(item_cantidad * item_precio) 
-FROM factura 
-join Item_Factura on fact_tipo + fact_sucursal + fact_tipo = item_tipo + item_sucursal + item_numero 
-join Producto on item_producto = prod_codigo
-join Empleado on fact_vendedor = empl_codigo
-join Departamento on empl_departamento = depa_codigo
-GROUP BY year(fact_fecha), MONTH(fact_fecha), prod_familia, prod_rubro, depa_zona, fact_cliente, prod_codigo
-
-END
-go
+create procedure ej8 
 
 
 /*
@@ -168,39 +254,34 @@ indirectamente). Solo contar aquellos empleados (directos o indirectos) que
 tengan un código mayor que su jefe directo.
 */
 
-CREATE FUNCTION ej11 (@codigo NUMERIC(6,0))
-RETURNS INT
-AS
-BEGIN 
-    DECLARE @cantidad INT = 0;
-    DECLARE @empSig NUMERIC(6,0);
+create or alter function ej11(@empleado numeric(6,0)) 
+returns int
+as 
+begin 
+    declare @subordinados int;
+    declare @subDirecto numeric(6,0);
 
-    DECLARE cursorEmp CURSOR FOR
-        SELECT empl_codigo
-        FROM empleado
-        WHERE empl_jefe = @codigo 
-          AND empl_codigo > @codigo;
+    declare cSub cursor for 
+    select empl_codigo 
+    from empleado  
+    where empl_jefe = @empleado
+    and empl_codigo > @empleado
 
-    SELECT @cantidad = COUNT(*)
-    FROM empleado 
-    WHERE empl_jefe = @codigo 
-      AND empl_codigo > @codigo;
+    select @subordinados = count(*)
+    from Empleado
+    where empl_jefe = @empleado
+    and empl_codigo > @empleado
 
-    IF @cantidad = 0
-        RETURN 0;
+    open cSub 
+    fetch next from cSub into @subDirecto
+    while @@FETCH_STATUS = 0
+        begin
+            set @subordinados = @subordinados + dbo.ej11(@subDirecto)
+            fetch next from cSub into @subDirecto
+        end
+    
+    close cSub
+    deallocate cSub
 
-    OPEN cursorEmp;
-    FETCH NEXT FROM cursorEmp INTO @empSig;
-
-    WHILE @@FETCH_STATUS = 0
-    BEGIN 
-        SET @cantidad = @cantidad + dbo.ej11(@empSig);
-        FETCH NEXT FROM cursorEmp INTO @empSig;
-    END
-
-    CLOSE cursorEmp;
-    DEALLOCATE cursorEmp; 
-
-    RETURN @cantidad;
-END
-GO
+    return @subordinados
+end
