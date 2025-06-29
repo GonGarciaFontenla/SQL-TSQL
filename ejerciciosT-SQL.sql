@@ -6,6 +6,9 @@
 5.✅
 6.❌
 7.✅
+8.✅
+9.❌
+10.❌
 11.✅
 */
 
@@ -235,16 +238,87 @@ también puede estar compuesto por otros y así sucesivamente, la tabla se debe
 crear y está formada por las siguientes columnas:
 */
 --drop table diferenciasEj8
+go
+create function precio_suma_unitaria(@producto char(8))
+returns decimal(12,2)
+as 
+begin 
+    declare @sumPrecioUni decimal(12,2)
+    declare @componente char(8)
+    declare @cantidad decimal(12,2)
 
-create table diferenciasEj8 (
+    if @producto not in (select comp_producto from Composicion)
+    begin
+        select @sumPrecioUni = prod_precio from Producto where prod_codigo = @producto
+    end
+    else
+    begin
+        set @sumPrecioUni = 0
+
+        declare cComponente cursor for
+        select comp_componente, comp_cantidad from Composicion
+        where comp_producto = @producto
+
+        open cComponente 
+        fetch next from cComponente into @componente, @cantidad
+        while @@FETCH_STATUS = 0
+        begin
+            set @sumPrecioUni = @sumPrecioUni + @cantidad * dbo.precio_suma_unitaria(@componente)
+            fetch next from cComponente into @componente, @cantidad 
+        end
+        close cComponente
+        deallocate cComponente
+    end
+
+    return @sumPrecioUni
+end
+go
+
+create procedure ej8
+as
+begin
+    create table diferenciasEj8 (
     articulo char(8),
 	detalle char(50),
 	cantidad int,
 	precio_generado decimal(12,2),
 	precio_facturado decimal(12,2) 
-)
+    )
+    insert into diferenciasEj8
+    select
+        comp_producto, 
+        prod_detalle, 
+        count(comp_componente),
+        dbo.precio_suma_unitaria(prod_codigo), 
+        prod_precio
+    from Composicion
+    join Producto on comp_producto = prod_codigo
+    group by comp_producto, prod_detalle, prod_precio, prod_codigo
+end
+go
 
-create procedure ej8 
+/*
+9. Crear el/los objetos de base de datos que ante alguna modificación de un ítem de
+factura de un artículo con composición realice el movimiento de sus
+correspondientes componentes.
+*/
+
+
+
+
+
+
+/*
+10. Crear el/los objetos de base de datos que ante el intento de borrar un artículo
+verifique que no exista stock y si es así lo borre en caso contrario que emita un
+mensaje de error.
+*/
+
+
+
+
+
+
 
 
 /*
@@ -285,3 +359,4 @@ begin
 
     return @subordinados
 end
+go 
