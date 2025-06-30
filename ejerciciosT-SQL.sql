@@ -15,10 +15,15 @@
 14.✅
 15.✅
 16.✅
-17.
-18.
-19.
-20.
+17.✅
+18.✅
+19.✅
+20.✅
+21. 
+22. 
+23. 
+24. 
+25. 
 */
 
 /*
@@ -427,34 +432,6 @@ pueda ser compuesto por sí mismo. Se sabe que en la actualidad dicha regla se
 cumple y que la base de datos es accedida por n aplicaciones de diferentes tipos
 y tecnologías. No se conoce la cantidad de niveles de composición existentes.
 */
-
-create trigger ej12 on composicion instead of insert, update
-as 
-begin 
-    if(select sum(dbo.ej12Func(comp_producto, comp_componente)) from inserted) > 0
-        begin
-            print 'Un producto no puede estar compuesto por si mismo'
-            rollback 
-        end
-    if(select count(*) from inserted) > 0 and (select count(*) from deleted) > 0
-        begin
-            update c
-            set
-                c.comp_producto = i.comp_producto,
-                c.comp_componente = i.comp_componente,
-                c.comp_cantidad = i.comp_cantidad
-            from Composicion c
-            JOIN inserted i on c.comp_producto = i.comp_producto
-        end
-    else
-        begin
-            insert into Composicion(comp_cantidad, comp_producto, comp_componente)
-            select comp_Cantidad, comp_producto, comp_componente
-            from inserted
-        end 
-end 
-go
-
 create function ej12Func(@producto char(8), @componente char(8))
 returns int
 as
@@ -483,6 +460,34 @@ end
 go
 
 
+create trigger ej12 on composicion instead of insert, update
+as 
+begin 
+    if(select sum(dbo.ej12Func(comp_producto, comp_componente)) from inserted) > 0
+        begin
+            print 'Un producto no puede estar compuesto por si mismo'
+            rollback 
+        end
+    if(select count(*) from inserted) > 0 and (select count(*) from deleted) > 0
+        begin
+            update c
+            set
+                c.comp_producto = i.comp_producto,
+                c.comp_componente = i.comp_componente,
+                c.comp_cantidad = i.comp_cantidad
+            from Composicion c
+            JOIN inserted i on c.comp_producto = i.comp_producto
+        end
+    else
+        begin
+            insert into Composicion(comp_cantidad, comp_producto, comp_componente)
+            select comp_Cantidad, comp_producto, comp_componente
+            from inserted
+        end 
+end 
+go
+
+
 /*
 13. Cree el/los objetos de base de datos necesarios para implementar la siguiente regla
 “Ningún jefe puede tener un salario mayor al 20% de las suma de los salarios de
@@ -490,18 +495,6 @@ sus empleados totales (directos + indirectos)”. Se sabe que en la actualidad d
 regla se cumple y que la base de datos es accedida por n aplicaciones de
 diferentes tipos y tecnologías
 */
-create trigger ej13 on Empleado after insert, update, delete
-as 
-begin
-    if exists(select 1 from inserted where empl_salario > dbo.Ej13Func(empl_codigo) * 0.20) --Ej13Func devuelve sumatoria total de los empleados del jefe
-        print 'Un jefe no puede tener un salario mayor al 20% de la suma de los salarios de los empleados'
-        rollback
-    if exists(select 1 from deleted where empl_salario > dbo.Ej13Func(empl_codigo) * 0.20)
-        print 'Un jefe no puede tener un salario mayor al 20% de la suma de los salarios de los empleados'
-        rollback
-end 
-go 
-
 create function Ej13Func(@jefe numeric(6,0))
 returns decimal(12,2)
 begin
@@ -531,6 +524,19 @@ end
 go 
 
 
+create trigger ej13 on Empleado after insert, update, delete
+as 
+begin
+    if exists(select 1 from inserted where empl_salario > dbo.Ej13Func(empl_codigo) * 0.20) --Ej13Func devuelve sumatoria total de los empleados del jefe
+        print 'Un jefe no puede tener un salario mayor al 20% de la suma de los salarios de los empleados'
+        rollback
+    if exists(select 1 from deleted where empl_salario > dbo.Ej13Func(empl_codigo) * 0.20)
+        print 'Un jefe no puede tener un salario mayor al 20% de la suma de los salarios de los empleados'
+        rollback
+end 
+go 
+
+
 /*
 14. Agregar el/los objetos necesarios para que si un cliente compra un producto
 compuesto a un precio menor que la suma de los precios de sus componentes
@@ -545,7 +551,34 @@ PRECIO_COMPUESTO > SUMA_COMPONENTES * 0.5 && PRECIO_COMPUESTO < SUMA_COMPONENTES
 PRECIO_COMPUESTO > SUMA_COMPONENTES * 0.5 && PRECIO_COMPUESTO > SUMA_COMPONENTES --> INSERTAS
 PRECIO_COMPUESTO < SUMA_COMPONENTES --> NO INSERTAS Y DELETEAS TODO ITEM_FACTURA ASOCIADO A ESA FACTURA Y FINALMENTE DELETEAS FACTURA
 */
+create function ej14Func(@producto char(8))
+returns numeric(12,2)
+as 
+begin
+    declare @sumPrecioComp numeric(12,2) = 0 
+    declare @compo char(8), @cantidad decimal(12,2)
 
+    if @producto not in (select comp_producto from Composicion)
+        set @sumPrecioComp = (select prod_precio from Producto where prod_codigo = @producto)
+    else 
+        begin
+            declare cComp cursor for
+            select comp_componente, comp_cantidad from Composicion 
+            where comp_producto = @producto
+
+            open cComp 
+            fetch next from cComp into @compo, @cantidad
+            while @@FETCH_STATUS = 0
+                begin 
+                    set @sumPrecioComp = @sumPrecioComp + @cantidad * dbo.ej14Func(@compo)
+                    fetch next from cComp into @compo, @cantidad
+                end  
+        close cComp
+        deallocate cComp
+        end
+    return @sumPrecioComp
+end 
+go
 
 
 create trigger ej14 on item_Factura instead of insert
@@ -585,36 +618,6 @@ begin
     deallocate cItem
 end 
 go 
-
-
-create function ej14Func(@producto char(8))
-returns numeric(12,2)
-as 
-begin
-    declare @sumPrecioComp numeric(12,2) = 0 
-    declare @compo char(8), @cantidad decimal(12,2)
-
-    if @producto not in (select comp_producto from Composicion)
-        set @sumPrecioComp = (select prod_precio from Producto where prod_codigo = @producto)
-    else 
-        begin
-            declare cComp cursor for
-            select comp_componente, comp_cantidad from Composicion 
-            where comp_producto = @producto
-
-            open cComp 
-            fetch next from cComp into @compo, @cantidad
-            while @@FETCH_STATUS = 0
-                begin 
-                    set @sumPrecioComp = @sumPrecioComp + @cantidad * dbo.ej14Func(@compo)
-                    fetch next from cComp into @compo, @cantidad
-                end  
-        close cComp
-        deallocate cComp
-        end
-    return @sumPrecioComp
-end 
-go
 
 
 /*
@@ -742,4 +745,178 @@ necesarios para que dicha regla de negocio se cumpla automaticamente. No se
 conoce la forma de acceso a los datos ni el procedimiento por el cual se
 incrementa o descuenta stock
 */
+create trigger ej17 on stock after update 
+as 
+begin
+    if exists(select 1 from inserted where stoc_cantidad < stoc_punto_reposicion or stoc_cantidad >= stoc_stock_maximo)
+        begin
+            print 'Stock invalido'
+            rollback 
+        end 
+end 
+go 
 
+
+/*
+18. Sabiendo que el limite de credito de un cliente es el monto maximo que se le
+puede facturar mensualmente, cree el/los objetos de base de datos necesarios
+para que dicha regla de negocio se cumpla automaticamente. No se conoce la
+forma de acceso a los datos ni el procedimiento por el cual se emiten las facturas
+*/
+create function ej18Func(@cliente char(6))
+returns decimal(12,2)
+as
+begin
+    declare @totalFacturado decimal(12,2) = 0
+    declare @fact_total decimal(12,2)
+
+    declare cFact cursor for
+    select fact_total
+    from factura 
+    where fact_cliente = @cliente and MONTH(fact_fecha) = MONTH(getdate())
+    and year(fact_fecha) = YEAR(GETDATE())
+
+    open cFact
+    fetch next from cFact into @fact_total
+    while @@FETCH_STATUS = 0
+        begin
+            set @totalFacturado =  @totalFacturado + @fact_total
+            FETCH next from cFact into @fact_total
+        end
+    close cFact
+    DEALLOCATE cFact
+    return @totalFacturado
+end 
+go
+
+create trigger ej18 on Factura after insert
+as 
+begin
+    if exists(
+        select 1 from inserted i 
+        join Cliente on i.fact_cliente = clie_codigo
+        where clie_limite_credito < dbo.ej18Func(fact_cliente) + i.fact_total
+    )
+        begin
+            print 'Ya se ha cobrado el monto maximo mensual para este cliente'
+            delete from Factura
+            where fact_tipo+fact_sucursal+fact_numero = (select fact_tipo+fact_sucursal+fact_numero from inserted)
+
+            delete from Item_Factura
+            where item_tipo+item_sucursal+item_numero = (select fact_tipo+fact_sucursal+fact_numero from inserted)
+        end 
+end
+go
+
+
+/*
+19. Cree el/los objetos de base de datos necesarios para que se cumpla la siguiente
+regla de negocio automáticamente “Ningún jefe puede tener menos de 5 años de
+antigüedad y tampoco puede tener más del 50% del personal a su cargo
+(contando directos e indirectos) a excepción del gerente general”. Se sabe que en
+la actualidad la regla se cumple y existe un único gerente general.
+*/
+create function ej19Func(@jefe numeric(6,0))
+returns int
+as 
+begin
+    declare @empleado numeric(6,0)
+    declare @cantSubordinados int
+
+    declare cSubordinado cursor for
+    select empl_codigo
+    from Empleado
+    where empl_jefe = @jefe
+
+    select @cantSubordinados = count(*)
+    from Empleado
+    where empl_jefe = @jefe
+
+    open cSubordinado
+    fetch next from cSubordinado into @empleado
+    while @@FETCH_STATUS = 0
+        begin
+            set @cantSubordinados = @cantSubordinados + dbo.ej19Func(@empleado)
+            fetch next from cSubordinado into @empleado 
+        end 
+    close cSubordinado
+    deallocate cSubordinado
+
+    return @cantSubordinados
+end 
+go
+
+
+--Asumo que es un or, pero podria ser un and...
+--Es un tema de interpretacion de consigna, no es relevante al problema.
+create trigger ej19 on Empleado after insert
+as 
+begin
+    if exists(
+        select 1 from inserted e
+        join Empleado j on e.empl_jefe = j.empl_codigo and e.empl_jefe is not null
+        where DATEDIFF(year, j.empl_ingreso, getdate()) < 5
+        or dbo.ej19Func(j.empl_codigo) > (select count(*) from Empleado) * 0.5  
+    )
+        begin
+            print 'Un jefe debe tener mas de 5 años de antiguedad y no puede tener mas 
+            de la mitad de los empleados a cargo (salvo el gerente general)'
+            rollback
+        end
+end
+go
+
+/*
+20. Crear el/los objeto/s necesarios para mantener actualizadas las comisiones del
+vendedor.
+El cálculo de la comisión está dado por el 5% de la venta total efectuada por ese
+vendedor en ese mes, más un 3% adicional en caso de que ese vendedor haya
+vendido por lo menos 50 productos distintos en el mes.
+*/
+create procedure ej20 
+as  
+begin 
+    declare @empleado numeric(6,0)
+    declare @comision decimal(12,2)
+
+    declare cEmp cursor for
+    select empl_codigo
+    from Empleado
+
+    open cEmp
+    fetch next from cEmp into @empleado
+    while @@FETCH_STATUS = 0
+        begin 
+            set @comision = 0.05 * (
+                                    select sum(isnull(fact_total, 0)) 
+                                    from Factura 
+                                    where fact_vendedor = @empleado 
+                                    and year(fact_fecha) = year(GETDATE())
+                                    and MONTH(fact_fecha) = month(GETDATE())
+                                    )
+            if (
+                select count(distinct item_producto) 
+                from factura
+                join Item_Factura on fact_tipo + fact_sucursal + fact_numero = item_tipo + item_sucursal + item_numero 
+                where fact_vendedor = @empleado and year(fact_fecha) = year(GETDATE()) and MONTH(fact_fecha) = month(GETDATE())
+            ) >= 50
+                begin 
+                    set @comision = @comision + 0.03  * (
+                                    select sum(isnull(fact_total, 0)) 
+                                    from Factura 
+                                    where fact_vendedor = @empleado 
+                                    and year(fact_fecha) = year(GETDATE())
+                                    and MONTH(fact_fecha) = month(GETDATE())
+                                    )
+                end 
+            
+            update Empleado
+            set empl_comision = @comision
+            where empl_codigo = @empleado
+
+            fetch next from cEmp into @empleado
+        end 
+    close cEmp
+    deallocate cEmp
+end
+go
