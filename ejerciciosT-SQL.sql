@@ -302,12 +302,50 @@ go
 factura de un artículo con composición realice el movimiento de sus
 correspondientes componentes.
 */
+create trigger ej9 on item_factura after insert
+as
+begin 
+    declare @articulo char(8), @cant int, @depo char(2), @compo char(8), @cantCompo int
 
+    if (select count(*) from inserted) > 0
+        begin
+            declare cAlta cursor for 
+            select item_producto, item_cantidad
+            from inserted
+            join Composicion on item_producto = comp_producto
 
+            open cAlta
+            fetch next from cAlta into @articulo, @cant
+            while @@fetch_status = 0
+            begin
+                declare cComp cursor for 
+                select comp_componente, comp_cantidad
+                from Composicion
+                where comp_producto = @articulo
 
+                open cComp 
+                fetch next from cComp into @compo, @cantCompo
+                while @@FETCH_STATUS = 0
+                begin
+                    set @depo = (
+                        select top 1 stoc_deposito
+                        from stock
+                        where stoc_producto = @compo
+                    )
+                    update STOCK
+                    set stoc_cantidad = stoc_cantidad - (@cantCompo * @cant)
+                    where stoc_producto = @compo and stoc_deposito = @depo
 
-
-
+                    fetch next from cComp into @compo, @cantCompo
+                end
+                close cComp
+                deallocate cComp    
+            end
+            close cAlta
+            DEALLOCATE cAlta
+        end
+end
+go
 /*
 10. Crear el/los objetos de base de datos que ante el intento de borrar un artículo
 verifique que no exista stock y si es así lo borre en caso contrario que emita un
