@@ -14,7 +14,7 @@
 13.✅
 14.✅
 15.✅
-16.
+16.✅
 17.
 18.
 19.
@@ -657,4 +657,89 @@ begin
 end 
 go 
 
+
+/*
+16. Desarrolle el/los elementos de base de datos necesarios para que ante una venta
+automaticamante se descuenten del stock los articulos vendidos. Se descontaran
+del deposito que mas producto poseea y se supone que el stock se almacena
+tanto de productos simples como compuestos (si se acaba el stock de los
+compuestos no se arman combos)
+En caso que no alcance el stock de un deposito se descontara del siguiente y asi
+hasta agotar los depositos posibles. En ultima instancia se dejara stock negativo
+en el ultimo deposito que se desconto.
+*/
+create trigger ej16 on item_Factura after insert
+as
+begin
+    declare @producto char(8), @cantidad  decimal(12,2)
+    declare @depo char(2)
+    declare @cantDepo decimal(12,2)
+    declare @lastDepo char(2)
+
+    if exists(select 1 from inserted)
+    begin
+        declare cItems cursor for
+        select item_producto, item_cantidad
+        from inserted
+
+        open cItems
+        fetch next from cItems into @producto, @cantidad
+        while @@FETCH_STATUS = 0 
+        begin
+            declare cDeposito cursor for
+            select stoc_Deposito, stoc_cantidad
+            from stock
+            where stoc_producto = @producto
+            order by stoc_cantidad desc
+
+            open cDeposito
+            fetch next from cDeposito into @depo, @cantDepo
+            while @@FETCH_STATUS = 0 and @cantidad > 0
+                begin
+                    if @cantDepo >= @cantidad
+                        begin
+                            update stock
+                            set stoc_cantidad = (@cantDepo - @cantidad)
+                            where stoc_deposito = @depo
+                            and stoc_producto = @producto
+                            SET @cantidad = 0;
+                            FETCH NEXT FROM cDeposito INTO @depo, @cantDepo;
+                        end
+                    else
+                        begin
+                            update stock
+                            set stoc_cantidad = 0
+                            where stoc_deposito = @depo
+                            and stoc_producto = @producto
+                            set @cantidad = @cantidad - @cantDepo 
+                            set @lastDepo = @depo
+                            fetch next from cDeposito into @depo, @cantDepo 
+                        end
+                end
+            if @cantidad > 0
+                begin
+                    update stock
+                    set stoc_cantidad = stoc_cantidad - @cantidad
+                    where stoc_deposito = @lastDepo
+                    and stoc_producto = @producto 
+                end 
+            close cDeposito
+            deallocate cDeposito
+            fetch next from cItems into @producto, @cantidad         
+        end
+        close cItems
+        deallocate cItems
+    end
+end 
+go
+
+
+/*
+17. Sabiendo que el punto de reposicion del stock es la menor cantidad de ese objeto
+que se debe almacenar en el deposito y que el stock maximo es la maxima
+cantidad de ese producto en ese deposito, cree el/los objetos de base de datos
+necesarios para que dicha regla de negocio se cumpla automaticamente. No se
+conoce la forma de acceso a los datos ni el procedimiento por el cual se
+incrementa o descuenta stock
+*/
 
