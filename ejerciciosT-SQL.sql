@@ -7,9 +7,18 @@
 6.❌
 7.✅
 8.✅
-9.❌
-10.❌
+9.❌ --medio tik muy dificil
+10.✅
 11.✅
+12.✅
+13.✅
+14.✅
+15.✅
+16.
+17.
+18.
+19.
+20.
 */
 
 /*
@@ -200,6 +209,7 @@ insertar una línea por cada artículo con los movimientos de stock generados po
 las ventas entre esas fechas. La tabla se encuentra creada y vacía.
 */
 --drop table VentasEj7
+--drop procedure ej7
 
 CREATE TABLE VentasEj7 (
 	articulo char(8),
@@ -351,12 +361,23 @@ go
 verifique que no exista stock y si es así lo borre en caso contrario que emita un
 mensaje de error.
 */
-
-
-
-
-
-
+create trigger ej10 on producto instead of delete
+as 
+begin
+    if (
+        select count(*) 
+        from deleted d 
+        join stock on d.prod_codigo = stoc_producto and stoc_cantidad > 0
+        ) > 0
+            begin
+                print('No es posible borrar articulo con stock')
+                ROLLBACK
+            end 
+        else 
+            delete from Producto 
+            where prod_codigo in (select prod_codigo from deleted)
+end 
+go
 
 
 /*
@@ -398,3 +419,242 @@ begin
     return @subordinados
 end
 go 
+
+
+/*
+12. Cree el/los objetos de base de datos necesarios para que nunca un producto
+pueda ser compuesto por sí mismo. Se sabe que en la actualidad dicha regla se
+cumple y que la base de datos es accedida por n aplicaciones de diferentes tipos
+y tecnologías. No se conoce la cantidad de niveles de composición existentes.
+*/
+
+create trigger ej12 on composicion instead of insert, update
+as 
+begin 
+    if(select sum(dbo.ej12Func(comp_producto, comp_componente)) from inserted) > 0
+        begin
+            print 'Un producto no puede estar compuesto por si mismo'
+            rollback 
+        end
+    if(select count(*) from inserted) > 0 and (select count(*) from deleted) > 0
+        begin
+            update c
+            set
+                c.comp_producto = i.comp_producto,
+                c.comp_componente = i.comp_componente,
+                c.comp_cantidad = i.comp_cantidad
+            from Composicion c
+            JOIN inserted i on c.comp_producto = i.comp_producto
+        end
+    else
+        begin
+            insert into Composicion(comp_cantidad, comp_producto, comp_componente)
+            select comp_Cantidad, comp_producto, comp_componente
+            from inserted
+        end 
+end 
+go
+
+create function ej12Func(@producto char(8), @componente char(8))
+returns int
+as
+begin 
+    if @producto = @componente 
+        return 1
+    else 
+        declare @prodAux char(8)
+        declare cComp cursor for
+        select comp_componente 
+        from Composicion 
+        where comp_producto = @componente
+
+        open cComp
+        fetch next from cComp into @prodAux
+        while @@FETCH_STATUS = 0
+            begin
+                if dbo.ej12Func(@componente, @prodAux) = 1
+                    return 1
+                fetch next from cComp into @prodAux
+            end
+        close cComp
+        deallocate cComp
+        return 0
+end 
+go
+
+
+/*
+13. Cree el/los objetos de base de datos necesarios para implementar la siguiente regla
+“Ningún jefe puede tener un salario mayor al 20% de las suma de los salarios de
+sus empleados totales (directos + indirectos)”. Se sabe que en la actualidad dicha
+regla se cumple y que la base de datos es accedida por n aplicaciones de
+diferentes tipos y tecnologías
+*/
+create trigger ej13 on Empleado after insert, update, delete
+as 
+begin
+    if exists(select 1 from inserted where empl_salario > dbo.Ej13Func(empl_codigo) * 0.20) --Ej13Func devuelve sumatoria total de los empleados del jefe
+        print 'Un jefe no puede tener un salario mayor al 20% de la suma de los salarios de los empleados'
+        rollback
+    if exists(select 1 from deleted where empl_salario > dbo.Ej13Func(empl_codigo) * 0.20)
+        print 'Un jefe no puede tener un salario mayor al 20% de la suma de los salarios de los empleados'
+        rollback
+end 
+go 
+
+create function Ej13Func(@jefe numeric(6,0))
+returns decimal(12,2)
+begin
+    declare @sumSuborSario numeric(12,2) = 0
+    declare @suborSalario numeric(12,2)
+    declare @suborDirecto numeric(6,0)
+
+    if (select count(*) from Empleado where empl_jefe = @jefe) = 0
+        return 0 
+
+    declare cSubord cursor for
+    select empl_codigo, empl_salario
+    from Empleado
+    where empl_jefe = @jefe
+
+    open cSubord
+    fetch next from cSubord into @suborDirecto, @suborSalario
+    while @@FETCH_STATUS = 0
+        begin 
+            set @sumSuborSario = @sumSuborSario + @suborSalario + dbo.Ej13Func(@suborDirecto)
+            fetch next from cSubord into @suborDirecto, @suborSalario
+        end 
+    close cSubord
+    deallocate cSubord
+    return @sumSuborSario
+end 
+go 
+
+
+/*
+14. Agregar el/los objetos necesarios para que si un cliente compra un producto
+compuesto a un precio menor que la suma de los precios de sus componentes
+que imprima la fecha, que cliente, que productos y a qué precio se realizó la
+compra. No se deberá permitir que dicho precio sea menor a la mitad de la suma
+de los componentes.
+*/
+
+
+/*
+PRECIO_COMPUESTO > SUMA_COMPONENTES * 0.5 && PRECIO_COMPUESTO < SUMA_COMPONENTES --> PRINTEAS E INSERTAS
+PRECIO_COMPUESTO > SUMA_COMPONENTES * 0.5 && PRECIO_COMPUESTO > SUMA_COMPONENTES --> INSERTAS
+PRECIO_COMPUESTO < SUMA_COMPONENTES --> NO INSERTAS Y DELETEAS TODO ITEM_FACTURA ASOCIADO A ESA FACTURA Y FINALMENTE DELETEAS FACTURA
+*/
+
+
+
+create trigger ej14 on item_Factura instead of insert
+as 
+begin 
+    declare @producto char(8), @precio numeric(12,2), @fecha smalldatetime, @cliente char(6)
+    declare @type char(1), @sucursal char(4), @numero char(8), @cantidad decimal(12,2)
+
+    declare cItem cursor for
+    select fact_fecha, fact_cliente, item_producto, item_precio, item_tipo, item_sucursal, item_numero, item_cantidad
+    from inserted
+    join Factura on fact_tipo+fact_sucursal+fact_numero = item_tipo+item_sucursal+item_numero 
+
+    open cItem
+    fetch next from cItem into @fecha, @cliente, @producto, @precio, @type, @sucursal, @numero, @cantidad
+    while @@FETCH_STATUS = 0
+    begin 
+        if @precio > dbo.ej14Func(@producto) * 0.5 and @precio < dbo.ej14Func(@producto)
+            begin 
+                print(@fecha + ' ' + @cliente + ' ' + @producto + ' ' + @precio)
+                insert into Item_Factura
+                values(@type, @sucursal, @numero, @producto, @cantidad, @precio)
+            end
+        else
+            begin
+                if @precio > dbo.ej14Func(@producto)
+                    insert into Item_Factura values(@type, @sucursal, @numero, @producto, @cantidad, @precio)
+                else 
+                    begin
+                        delete from Item_Factura where item_tipo+item_sucursal+item_numero = @type+@sucursal+@numero
+                        delete from Factura where fact_tipo+fact_sucursal+fact_numero = @type+@sucursal+@numero
+                    end 
+            end 
+        fetch next from cItem into @fecha, @cliente, @producto, @precio, @type, @sucursal, @numero, @cantidad
+    end 
+    close cItem
+    deallocate cItem
+end 
+go 
+
+
+create function ej14Func(@producto char(8))
+returns numeric(12,2)
+as 
+begin
+    declare @sumPrecioComp numeric(12,2) = 0 
+    declare @compo char(8), @cantidad decimal(12,2)
+
+    if @producto not in (select comp_producto from Composicion)
+        set @sumPrecioComp = (select prod_precio from Producto where prod_codigo = @producto)
+    else 
+        begin
+            declare cComp cursor for
+            select comp_componente, comp_cantidad from Composicion 
+            where comp_producto = @producto
+
+            open cComp 
+            fetch next from cComp into @compo, @cantidad
+            while @@FETCH_STATUS = 0
+                begin 
+                    set @sumPrecioComp = @sumPrecioComp + @cantidad * dbo.ej14Func(@compo)
+                    fetch next from cComp into @compo, @cantidad
+                end  
+        close cComp
+        deallocate cComp
+        end
+    return @sumPrecioComp
+end 
+go
+
+
+/*
+15. Cree el/los objetos de base de datos necesarios para que el objeto principal
+reciba un producto como parametro y retorne el precio del mismo.
+Se debe prever que el precio de los productos compuestos sera la sumatoria de
+los componentes del mismo multiplicado por sus respectivas cantidades. No se
+conocen los nivles de anidamiento posibles de los productos. Se asegura que
+nunca un producto esta compuesto por si mismo a ningun nivel. El objeto
+principal debe poder ser utilizado como filtro en el where de una sentencia
+select.
+*/
+create function ej15(@producto char(8))
+returns decimal(12,2)
+as 
+begin
+    declare @precio decimal(12,2) = 0
+    declare @componente char(8), @cantidad decimal(12,2)
+
+    if @producto not in (select comp_producto from Composicion)
+        set @precio = (select prod_precio from Producto where prod_codigo = @producto)
+    begin 
+        declare cComp cursor for
+        select comp_componente, comp_Cantidad
+        from Composicion 
+        where comp_producto = @producto
+
+        open cComp
+        fetch next from cComp into @componente, @cantidad
+        while @@FETCH_STATUS = 0
+            begin
+                set @precio = @precio + @cantidad * dbo.ej15(@componente)
+                fetch next from cComp into @componente, @cantidad
+            end 
+    end
+    close cComp 
+    deallocate cComp
+
+    return @precio
+end 
+go 
+
+
