@@ -19,11 +19,17 @@
 18.✅
 19.✅
 20.✅
-21. 
-22. 
-23. 
-24. 
-25. 
+21.✅
+22.❌ 
+23.✅
+24.✅
+25.
+26.
+27.
+28.
+29.
+30.
+31.
 */
 
 /*
@@ -920,3 +926,281 @@ begin
     deallocate cEmp
 end
 go
+
+
+/*
+21. Desarrolle el/los elementos de base de datos necesarios para que se cumpla
+automaticamente la regla de que en una factura no puede contener productos de
+diferentes familias. En caso de que esto ocurra no debe grabarse esa factura y
+debe emitirse un error en pantalla.
+*/
+create trigger ej21 on Factura instead of insert
+as
+begin 
+    if exists
+        (
+            select 1 
+            from inserted i 
+            join Item_Factura on i.fact_tipo+i.fact_sucursal+i.fact_numero = item_tipo+item_sucursal+item_numero
+            join Producto on item_producto = prod_codigo
+            group by  item_tipo, item_sucursal, item_numero
+            having count(distinct prod_familia) > 1      
+        )
+        begin 
+            delete from Item_Factura where item_tipo+item_sucursal+item_numero = (select fact_tipo+fact_sucursal+fact_numero from inserted)
+            RAISERROR('No puede comprarse productos de distintas familias en una misma factura', 16,1)
+        end
+    else
+        begin 
+            insert into Factura(fact_tipo, fact_sucursal, fact_numero, fact_fecha, fact_vendedor, fact_total, fact_total_impuestos, fact_cliente)
+            select fact_tipo, fact_sucursal, fact_numero, fact_fecha, fact_vendedor, fact_total, fact_total_impuestos, fact_cliente
+            from inserted
+        end 
+end 
+go
+
+
+/*
+22. Se requiere recategorizar los rubros de productos, de forma tal que nigun rubro
+tenga más de 20 productos asignados, si un rubro tiene más de 20 productos
+asignados se deberan distribuir en otros rubros que no tengan mas de 20
+productos y si no entran se debra crear un nuevo rubro en la misma familia con
+la descirpción “RUBRO REASIGNADO”, cree el/los objetos de base de datos
+necesarios para que dicha regla de negocio quede implementada.
+*/
+create procedure ej22
+as 
+begin
+    declare @rubro char(4)
+    declare @freeRubro char(4)
+    declare @cant_reasignar int
+    declare @freeCant int 
+    declare @newRubroID char(4)
+
+    declare cRubro cursor for
+    select rubr_id, (select count(*) from producto where prod_rubro = rubr_id) - 20
+    from rubro 
+    where (select count(*) from producto where prod_rubro = rubr_id) > 20
+
+    open cRubro
+    fetch next from cRubro into @rubro, @cant_reasignar
+
+    while @@FETCH_STATUS = 0
+        begin
+            declare cRubroLibre cursor for
+            select rubr_id, 20 - (select count(*) from producto where prod_rubro = rubr_id)
+            from rubro 
+            where (select count(*) from producto where prod_rubro = rubr_id) < 20
+
+            open cRubroLibre
+            fetch next from cRubroLibre into @freeRubro, @freeCant
+            while @@FETCH_STATUS = 0 and @cant_reasignar > 0
+                begin
+                    if @freeCant > @cant_reasignar
+                        begin
+                            update Producto
+                            set prod_rubro = @freeRubro
+                            where prod_codigo in (select top (@cant_reasignar) prod_codigo from Producto where prod_rubro = @rubro)
+                            set @cant_reasignar = 0
+                        end
+                    else
+                        begin
+                            update Producto
+                            set prod_rubro = @freeRubro
+                            where prod_codigo in (select top (@freeCant) prod_codigo from Producto where prod_rubro = @rubro)
+                            set @cant_reasignar = @cant_reasignar - @freeCant
+                        end 
+                    fetch from cRubroLibre into @freeRubro, @freeCant
+                end
+                if @cant_reasignar > 0
+                    begin
+                        SELECT @newRubroID = RIGHT('000' + CAST(ISNULL(MAX(CAST(rubr_id AS INT)), 0) + 1 AS VARCHAR), 4)
+                        FROM Rubro
+
+                        insert into Rubro(rubr_id, rubr_detalle)
+                        values(@newRubroID, 'RUBRO REASIGNADO')
+
+                        update Producto
+                        set prod_rubro = @newRubroID
+                        where prod_codigo in (select top (@cant_reasignar) prod_codigo from Producto where prod_rubro = @rubro)
+                    end
+                close cRubroLibre
+                deallocate cRubroLibre
+            fetch next from cRubro into @rubro, @cant_reasignar
+        end
+    close cRubro
+    deallocate cRubro
+end 
+go 
+
+drop PROCEDURE ej22
+
+begin TRANSACTION
+    select rubr_id, count(distinct prod_codigo) from Rubro
+    join Producto on rubr_id = prod_rubro
+    group by rubr_id
+    order by rubr_id
+
+    exec dbo.ej22
+
+    select rubr_id, count(distinct prod_codigo) from Rubro
+    join Producto on rubr_id = prod_rubro
+    group by rubr_id
+    order by rubr_id
+
+ROLLBACK
+go
+
+
+--Recorre rubro a rubro
+--Verifico si rubro tiene mas de 20 productos
+--Tiene mas de 20
+    --SELECCIONO 20 PRODUCTOS QUE SE QUEDAN
+    --RESTO DE PRODUCTO DIVIDO ENTRE LOS RUBROS QUE ENTRE
+    --SI ME SOBRA CANTIDAD CREO NUEVO RUBRO
+--No tiene mas de 20
+    --Paso a siguiente
+
+/*
+23. Desarrolle el/los elementos de base de datos necesarios para que ante una venta
+automaticamante se controle que en una misma factura no puedan venderse más
+de dos productos con composición. Si esto ocurre debera rechazarse la factura.
+*/
+create trigger ej23 on Item_Factura after insert
+as 
+begin 
+    if exists
+        (
+            select 1 
+            from Item_Factura i
+            join composicion on i.item_producto = comp_producto
+            group by item_numero+item_tipo+item_sucursal
+            having count(distinct item_producto) > 2
+        )
+        begin
+            delete from Item_Factura where item_tipo+item_sucursal+item_numero in (select item_tipo+item_sucursal+item_numero from inserted) 
+            delete from Factura where fact_tipo+fact_sucursal+fact_numero in (select item_tipo+item_sucursal+item_numero from inserted) 
+        end 
+end 
+go
+
+/*
+24. Se requiere recategorizar los encargados asignados a los depositos. Para ello
+cree el o los objetos de bases de datos necesarios que lo resueva, teniendo en
+cuenta que un deposito no puede tener como encargado un empleado que
+pertenezca a un departamento que no sea de la misma zona que el deposito, si
+esto ocurre a dicho deposito debera asignársele el empleado con menos
+depositos asignados que pertenezca a un departamento de esa zona.
+*/
+create procedure ej24
+as
+begin 
+    declare @depo char(2), @zona char(3)
+    declare @newEncargado numeric(6,0)
+
+    declare cDeposito cursor for
+    select depo_codigo, depo_zona
+    from deposito
+    join Empleado on depo_encargado = empl_codigo
+    join Departamento on empl_departamento = depa_codigo 
+    where depo_zona <> depa_zona
+
+    open cDeposito
+    fetch next from cDeposito into @depo, @zona
+    while @@FETCH_STATUS = 0
+        begin 
+            set @newEncargado = 
+                            (
+                                select top 1 empl_codigo 
+                                from Empleado 
+                                join Deposito on depo_encargado = empl_codigo and depo_zona = @zona 
+                                join Departamento on empl_departamento = depa_codigo and depa_zona = @zona
+                                group by empl_codigo
+                                order by count(empl_codigo) asc
+                            )
+            update DEPOSITO
+            set depo_encargado = @newEncargado
+            where depo_codigo = @depo 
+
+            fetch next from cDeposito into @depo, @zona, @encargado
+        end 
+    close cDeposito
+    deallocate cDeposito
+end 
+go
+
+/*
+25. Desarrolle el/los elementos de base de datos necesarios para que no se permita
+que la composición de los productos sea recursiva, o sea, que si el producto A 
+compone al producto B, dicho producto B no pueda ser compuesto por el
+producto A, hoy la regla se cumple.
+*/
+
+create function ej25Func(@producto char(8))
+returns int 
+as 
+begin 
+    declare @comp char(8)
+    declare @compRecur int = 0
+
+    declare cComp cursor for
+    select comp_componente
+    from Composicion where @producto = comp_producto
+
+    open cComp
+    fetch next from cComp into @comp
+    while @@FETCH_STATUS = 0 and @compRecur = 0
+        begin
+            if @producto in (select comp_componente from Composicion where comp_producto = @comp)
+                set @compRecur = 1
+            else if dbo.ej25Func(@comp) = 1
+                set @compRecur = 1
+            
+            FETCH next from cComp into @comp
+        end 
+    close cComp
+    deallocate cComp
+    return @compRecur
+end 
+go 
+
+
+create trigger ej25 on Composicion after insert
+as 
+begin
+    if exists(select 1 from inserted where dbo.ej25Func(comp_producto) = 1)
+        begin 
+            print 'La composicion no puede ser recursiva'
+            ROLLBACK
+        end 
+end 
+go
+
+
+/*
+26. Desarrolle el/los elementos de base de datos necesarios para que se cumpla
+automaticamente la regla de que una factura no puede contener productos que
+sean componentes de otros productos. En caso de que esto ocurra no debe
+grabarse esa factura y debe emitirse un error en pantalla.
+*/
+create trigger ej26 on item_Factura after insert
+as 
+begin 
+    if exists
+        (
+        select 1 from inserted i 
+        where item_producto in 
+                    (
+                        select comp_componente 
+                        from Composicion 
+                        join Item_Factura on comp_producto = item_producto 
+                        where item_tipo+item_sucursal+item_numero = i.item_tipo+i.item_sucursal+i.item_numero
+                    )
+        )
+        begin
+            delete Item_Factura where item_tipo+item_sucursal+item_numero in (select i.item_tipo+i.item_sucursal+i.item_numero from inserted i)
+            delete Factura where fact_tipo+fact_sucursal+fact_numero in (select i.item_tipo+i.item_sucursal+i.item_numero from inserted i)
+            ROLLBACK
+        end 
+end
+go 
